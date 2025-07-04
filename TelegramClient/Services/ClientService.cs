@@ -1,10 +1,12 @@
-﻿using Microsoft.Extensions.Options;
+﻿using CryptoExchange.Net.CommonObjects;
+using Microsoft.Extensions.Options;
 using ResourceHandler.Resources;
 using ResourceHandler.Resources.Enums;
 using ResourceHandler.Resources.Helper;
 using ResourceHandler.Resources.Models.TelegramBot;
 using ResourceHandler.Services;
 using System.Text;
+using System.Text.RegularExpressions;
 using Telegram.Bot;
 using Telegram.Bot.Exceptions;
 using Telegram.Bot.Polling;
@@ -126,47 +128,61 @@ namespace TelegramClient.Services
                                         await SendMessageAsync(chatId, sb.ToString());
                                     }
                                     else
-                                        await SendMessageAsync(chatId, $@"error -> command düzgün verilməyib");
+                                        await SendMessageAsync(chatId, $@"❌ Command düzgün verilməyib");
                                 }
                                 break;
                             case Enums.Commands.SUBSCRIBE:
                                 {
-                                    if (message.Text.StartsWith("/subscribe-"))
+                                    var parts = text.Split(' ', 3);
+
+                                    if (parts.Length < 3)
                                     {
+                                        await SendMessageAsync(chatId, "Səhv Command. Nümunə: /subscribe coin interval");
+                                        return;
+                                    }
 
-                                        var parts = text.Split('-', 2);
+                                    var coin = parts[1].ToUpperInvariant();
 
-                                        if (parts.Length < 2 || string.IsNullOrWhiteSpace(parts[1]))
-                                        {
-                                            await SendMessageAsync(chatId, "Səhv komanda. Nümunə: /subscribe-btcusdt");
-                                            return;
-                                        }
+                                    if (!Regex.IsMatch(coin, @"^[A-Z]+USDT$", RegexOptions.IgnoreCase))
+                                    {
+                                        await SendMessageAsync(chatId, $"❌ '{coin}' simvolu mövcud deyil və ya USDT ilə bitmir.");
+                                        return;
+                                    }
 
-                                        var coin = parts[1].ToUpperInvariant();
-                                        var coinResult = await _binanceService.GetSymbolTickerAsync(coin);
+                                    var interval = parts[2].ToUpperInvariant();
+                                    if (!MyStaticHelpers.TryParseInterval(interval, out var correctInterval))
+                                    {
+                                        await SendMessageAsync(chatId, $"❌ '{interval}' interval düzgün formatda deyil.\n\n" +
+                                                                       $"✅ Doğru format: yalnız dəqiqə olaraq **rəqəm** yazılmalıdır.\n" +
+                                                                       $"📌 Nümunə: `/subscribe BTCUSDT 5`\n" +
+                                                                       $"🔸 Qeyd: Dəqiqə dəyəri maksimum **3 rəqəmli** ola bilər (məsələn: 1, 15, 120).");
+                                        return;
+                                    }
 
-                                        if (coinResult.Success)
-                                        {
-                                            _subscriptionStore.Subscribe(chatId, coin, coinResult.Data.LastPrice);
-                                            await SendMessageAsync(chatId, $"✅ {coin} üçün abunəlik yaradıldı.\n💰 Giriş qiymətiniz: {coinResult.Data.LastPrice} USD");
-                                        }
-                                        else
-                                            await SendMessageAsync(chatId, $@"error -> command düzgün verilməyib");
+                                    var coinResult = await _binanceService.GetSymbolTickerAsync(coin);
+
+                                    if (coinResult.Success)
+                                    {
+                                        _subscriptionStore.Subscribe(chatId, coin, coinResult.Data.LastPrice, correctInterval);
+                                        await SendMessageAsync(chatId,
+                                            $"✅ {coin} üçün abunəlik yaradıldı.\n" +
+                                            $"💰 Giriş qiymətiniz: {coinResult.Data.LastPrice} USD\n" +
+                                            $"⏱ Bildiriş intervalı: {interval} dəqiqə");
                                     }
                                     else
-                                        await SendMessageAsync(chatId, $@"error -> command düzgün verilməyib");
+                                        await SendMessageAsync(chatId, $@"❌ Command düzgün verilməyib");
                                 }
                                 break;
                             case Enums.Commands.UNSUBSCRIBE:
                                 {
-                                    if (message.Text.StartsWith("/unsubscribe-"))
+                                    if (message.Text.StartsWith("/unsubscribe"))
                                     {
 
-                                        var parts = text.Split('-', 2);
+                                        var parts = text.Split(' ', 2);
 
                                         if (parts.Length < 2 || string.IsNullOrWhiteSpace(parts[1]))
                                         {
-                                            await SendMessageAsync(chatId, "Səhv komanda. Nümunə: /unsubscribe-btcusdt");
+                                            await SendMessageAsync(chatId, "Səhv Command. Nümunə: /unsubscribe btcusdt");
                                             return;
                                         }
 
@@ -176,7 +192,7 @@ namespace TelegramClient.Services
                                         await SendMessageAsync(chatId, $"{coin} Abunəlik ləğv edildi");
                                     }
                                     else
-                                        await SendMessageAsync(chatId, $@"error -> command düzgün verilməyib");
+                                        await SendMessageAsync(chatId, $@"❌ Command düzgün verilməyib");
                                 }
                                 break;
                             case Enums.Commands.SUBSCRIBES:
@@ -187,7 +203,7 @@ namespace TelegramClient.Services
                                         await SendMessageAsync(chatId, $"Abunəliyiniz yoxdur");
                                     else
                                     {
-                                        var msg = $"Abunə olduğunuz coinlər:\n" + string.Join("\n", coinList.Select(c => $"• {c.Key} (Giriş qiymətiniz: {c.Value})"));
+                                        var msg = $"Abunə olduğunuz coinlər:\n" + string.Join("\n", coinList.Select(c => $"• {c.Key} (Giriş qiymətiniz: {c.Value.EntryPrice})"));
                                         await SendMessageAsync(chatId, msg);
                                     }
 
@@ -204,16 +220,26 @@ namespace TelegramClient.Services
                                     .ToList();
 
                                     var sb = new StringBuilder();
-                                    sb.AppendLine("/help : Əmrlər haqqında məlumat.");
-                                    sb.AppendLine("/tubin-[coin] : Binance məlumatı üçün.");
-                                    sb.AppendLine("/subscribe-[coin] : Abunə ol");
-                                    sb.AppendLine("/unsubscribe-[coin] : Abunəlikdən çıx");
-                                    sb.AppendLine("/subscribes : Bütün Abunəliklər");
-                                    sb.AppendLine("Məsələn:");
+                                    sb.AppendLine("🤖 *Əmrlər üzrə yardım*");
+                                    sb.AppendLine("Aşağıdakı əmrləri istifadə edərək bot ilə qarşılıqlı əlaqə qura bilərsiniz:\n");
+
+                                    sb.AppendLine("📋 *Əsas Əmrlər:*");
+                                    sb.AppendLine("/help - Əmrlər haqqında məlumat.");
+                                    sb.AppendLine("/tubin [coin] - Binance üzərindən coin haqqında məlumat al.");
+                                    sb.AppendLine("/subscribe [coin] [dəqiqə] - Coin üçün qiymət abunəliyi (məsələn: /subscribe BTCUSDT 5).");
+                                    sb.AppendLine("/unsubscribe [coin] - Coin üçün abunəliyi ləğv et.");
+                                    sb.AppendLine("/subscribes - Hazırda abunə olduğunuz coinlərin siyahısını göstər.\n");
+
+                                    sb.AppendLine("⏱ *Interval haqqında:*");
+                                    sb.AppendLine("- /subscribe əmri ilə birlikdə **dəqiqə** formatında interval yazmalısınız.");
+                                    sb.AppendLine("- Məsələn: `/subscribe BTCUSDT 10` → hər 10 dəqiqədən bir qiymət yoxlanacaq.");
+                                    sb.AppendLine("- Yalnız rəqəm yazılmalıdır və maksimum 3 rəqəmli ola bilər.\n");
+
+                                    sb.AppendLine("💰 *Mövcud USDT Coin-lər:*");
 
                                     foreach (var symbol in usdtSymbols)
                                     {
-                                        sb.AppendLine($"/tubin-{symbol.ToLower()}");
+                                        sb.AppendLine($"• {symbol.ToUpper()}");
                                     }
 
                                     await SendMessageAsync(chatId,

@@ -1,4 +1,5 @@
 ﻿using ResourceHandler.Resources.Models.TelegramBot;
+using System.Text.RegularExpressions;
 
 namespace ResourceHandler.Resources.Helper
 {
@@ -63,6 +64,20 @@ namespace ResourceHandler.Resources.Helper
 
             returnArray.AddRange(parts);
             return returnArray.ToArray();
+        }
+
+        public static bool TryParseInterval(string input, out TimeSpan interval)
+        {
+            interval = TimeSpan.Zero;
+
+            var match = Regex.Match(input, @"^\d{1,3}$", RegexOptions.IgnoreCase);
+            if (match.Success)
+            {
+                int minutes = int.Parse(match.Groups[0].Value);
+                interval = TimeSpan.FromMinutes(minutes);
+                return true;
+            }
+            return false;
         }
     }
 }

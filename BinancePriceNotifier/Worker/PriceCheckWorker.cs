@@ -1,5 +1,4 @@
-﻿using CryptoExchange.Net.Sockets;
-using Microsoft.Extensions.Hosting;
+﻿using Microsoft.Extensions.Hosting;
 using ResourceHandler.Resources;
 using ResourceHandler.Services;
 using TelegramClient.Services;
@@ -11,8 +10,11 @@ namespace BinancePriceNotifier.Worker
         private readonly SubscriptionStore _subscriptions;
         private readonly IClientService _botClient;
         private readonly IBinanceService _binanceService;
-        private readonly Dictionary<string, decimal> _lastPrices = new();
 
+        private readonly Dictionary<string, decimal> _lastPrices = new();
+        private readonly Dictionary<(long userid, string symbol), DateTime> _lastCheckers = new();
+
+        private readonly TimeSpan _delayInterval = TimeSpan.FromSeconds(10);
 
         public PriceCheckWorker(IClientService botClient, SubscriptionStore subscriptions, IBinanceService binanceService)
         {
@@ -25,67 +27,63 @@ namespace BinancePriceNotifier.Worker
         {
             while (!stoppingToken.IsCancellationRequested)
             {
-                var symbols = _subscriptions.GetAllSymbols();
-                var subscribtions = _subscriptions.GetAllSubscriptions();
+                var currentSubscriptions = _subscriptions.GetAllSubscriptions();
 
-                foreach (var user in subscribtions)
+                var userTasks = currentSubscriptions.Select(user => Task.Run(async () =>
                 {
                     long userId = user.Key;
                     var coins = user.Value;
 
-                    foreach (var (symbol, baselinePrice) in coins)
+                    foreach (var (symbol, info) in coins)
                     {
-                        var currentSubscriptions = _subscriptions.GetAllSubscriptions();
-
-                        if (!currentSubscriptions.TryGetValue(userId, out var userCoins) || !userCoins.ContainsKey(symbol))
+                        var latestSubs = _subscriptions.GetAllSubscriptions();
+                        if (!latestSubs.TryGetValue(userId, out var userCoins) || !userCoins.ContainsKey(symbol))
                             continue;
 
+                        var key = (userId, symbol);
+                        if (_lastCheckers.TryGetValue(key, out var lastChecked))
+                            if ((DateTime.UtcNow - lastChecked) < info.Interval)
+                                continue;
+
                         var tickerResult = await _binanceService.GetSymbolTickerAsync(symbol);
+                        if (!tickerResult.Success) continue;
 
-                        if (tickerResult.Success)
+                        var currentPrice = tickerResult.Data.LastPrice;
+
+                        if (_lastPrices.TryGetValue(symbol, out var oldPrice))
                         {
-                            var price = tickerResult.Data.LastPrice;
-                            var msg = string.Empty;
-                            if (_lastPrices.TryGetValue(symbol, out var newPrice))
+                            string msg = string.Empty;
+                            if (currentPrice > info.EntryPrice)
                             {
-                                if (newPrice > baselinePrice)
-                                {
-                                    var changePercent = ((newPrice - baselinePrice) / baselinePrice) * 100;
-
-                                    msg = $"📈 {symbol} qiyməti artdı!\n" +
-                                          $"Giriş qiymətiniz: {baselinePrice}\n" +
-                                          $"Hazırda: {newPrice}\n" +
-                                          $"🔼 Artım: +%{changePercent:F4}";
-
-                                    await _botClient.SendMessageAsync(userId, msg);
-                                }
-                                else if (newPrice < baselinePrice)
-                                {
-                                    var changePercent = ((baselinePrice - newPrice) / baselinePrice) * 100;
-
-                                    msg = $"📉 {symbol} qiyməti azaldı!\n" +
-                                          $"Giriş qiymətiniz: {baselinePrice}\n" +
-                                          $"Hazırda: {newPrice}\n" +
-                                          $"🔽 Azalma: -%{changePercent:F4}";
-                                    await _botClient.SendMessageAsync(userId, msg);
-                                }
+                                var changePercent = ((currentPrice - info.EntryPrice) / info.EntryPrice) * 100;
+                                msg = $"📈 {symbol} qiyməti artdı!\n" +
+                                      $"Giriş qiymətiniz: {info.EntryPrice}\n" +
+                                      $"Hazırda: {currentPrice}\n" +
+                                      $"🔼 Artım: +%{changePercent:F2}";
                             }
-                            _lastPrices[symbol] = price;
+                            else if (currentPrice < info.EntryPrice)
+                            {
+                                var changePercent = ((info.EntryPrice - currentPrice) / info.EntryPrice) * 100;
+                                msg = $"📉 {symbol} qiyməti azaldı!\n" +
+                                      $"Giriş qiymətiniz: {info.EntryPrice}\n" +
+                                      $"Hazırda: {currentPrice}\n" +
+                                      $"🔽 Azalma: -%{changePercent:F2}";
+                            }
 
-                            await Task.Delay(5000, stoppingToken);
+                            if (!string.IsNullOrEmpty(msg))
+                                await _botClient.SendMessageAsync(userId, msg);
                         }
 
-                        await Task.Delay(15000, stoppingToken);
-
+                        _lastPrices[symbol] = currentPrice;
+                        _lastCheckers[key] = DateTime.UtcNow;
+                        info.LastChecked = DateTime.UtcNow;
                     }
-                }
+                }));
 
+                await Task.WhenAll(userTasks);
 
+                await Task.Delay(_delayInterval, stoppingToken);
             }
         }
-
-
-
-
     }
 }

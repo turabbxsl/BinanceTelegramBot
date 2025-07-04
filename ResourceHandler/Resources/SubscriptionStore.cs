@@ -8,7 +8,7 @@ namespace ResourceHandler.Resources
 
         private readonly string _filePath;
         private readonly IBinanceService _binanceService;
-        private Dictionary<long, Dictionary<string, decimal>> _subscriptions;
+        private Dictionary<long, Dictionary<string, SubscriptionInfo>> _subscriptions;
 
         public SubscriptionStore(IBinanceService binanceService)
         {
@@ -19,24 +19,24 @@ namespace ResourceHandler.Resources
             _binanceService = binanceService;
         }
 
-        public Dictionary<long, Dictionary<string, decimal>> LoadFromFile()
+        public Dictionary<long, Dictionary<string, SubscriptionInfo>> LoadFromFile()
         {
             if (!File.Exists(_filePath))
-                return new Dictionary<long, Dictionary<string, decimal>>();
+                return new Dictionary<long, Dictionary<string, SubscriptionInfo>>();
 
             try
             {
                 var json = File.ReadAllText(_filePath);
-                var data = System.Text.Json.JsonSerializer.Deserialize<Dictionary<long, List<KeyValuePair<string, decimal>>>>(json);
+                var data = System.Text.Json.JsonSerializer.Deserialize<Dictionary<long, List<KeyValuePair<string, SubscriptionInfo>>>>(json);
                 var result = data.ToDictionary(
                                                 kvp => kvp.Key,
                                                 kvp => kvp.Value.ToDictionary(x => x.Key, x => x.Value)
                                               );
-                return result ?? new Dictionary<long, Dictionary<string, decimal>>();
+                return result ?? new Dictionary<long, Dictionary<string, SubscriptionInfo>>();
             }
             catch (Exception)
             {
-                return new Dictionary<long, Dictionary<string, decimal>>();
+                return new Dictionary<long, Dictionary<string, SubscriptionInfo>>();
             }
 
         }
@@ -47,14 +47,18 @@ namespace ResourceHandler.Resources
             File.WriteAllText(_filePath, System.Text.Json.JsonSerializer.Serialize(dict));
         }
 
-        public void Subscribe(long userId, string symbol, decimal baseLinePrice)
+        public void Subscribe(long userId, string symbol, decimal baseLinePrice, TimeSpan interval)
         {
             symbol = symbol.ToUpperInvariant();
             if (!_subscriptions.ContainsKey(userId))
-                _subscriptions[userId] = new Dictionary<string, decimal>();
+                _subscriptions[userId] = new Dictionary<string, SubscriptionInfo>();
 
-            if (!_subscriptions[userId].ContainsKey(symbol))
-                _subscriptions[userId].Add(symbol, baseLinePrice);
+            _subscriptions[userId][symbol] = new SubscriptionInfo()
+            {
+                EntryPrice = baseLinePrice,
+                Interval = interval,
+                LastChecked = DateTime.MinValue
+            };
 
             SaveToFile();
             _subscriptions = LoadFromFile();
@@ -77,12 +81,12 @@ namespace ResourceHandler.Resources
                 .Select(kvp => kvp.Key);
         }
 
-        public Dictionary<string, decimal> GetSubscribersByUser(long userId)
+        public Dictionary<string, SubscriptionInfo> GetSubscribersByUser(long userId)
         {
             if (_subscriptions.TryGetValue(userId, out var symbols))
                 return symbols;
 
-            return new Dictionary<string, decimal>();
+            return new Dictionary<string, SubscriptionInfo>();
         }
 
         public IEnumerable<string> GetAllSymbols()
@@ -91,7 +95,7 @@ namespace ResourceHandler.Resources
             return _subscriptions.Values.SelectMany(dict => dict.Keys).Distinct();
         }
 
-        public Dictionary<long, Dictionary<string, decimal>> GetAllSubscriptions()
+        public Dictionary<long, Dictionary<string, SubscriptionInfo>> GetAllSubscriptions()
         {
             _subscriptions = LoadFromFile();
             return _subscriptions;
