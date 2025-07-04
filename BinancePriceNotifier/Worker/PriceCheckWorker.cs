@@ -85,5 +85,7 @@ namespace BinancePriceNotifier.Worker
                 await Task.Delay(_delayInterval, stoppingToken);
             }
         }
+
+
     }
 }

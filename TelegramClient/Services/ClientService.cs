@@ -92,7 +92,10 @@ namespace TelegramClient.Services
                         {
                             case Enums.Commands.ERROR:
                                 {
-                                    await SendMessageAsync(chatId + 1, "Error");
+                                    await SendMessageAsync(chatId,
+                                                         "❌ Əmr işlənərkən xəta baş verdi.\n" +
+                                                         "Zəhmət olmasa əmr formatını düzgün daxil etdiyinizə əmin olun.\n\n" +
+                                                         "ℹ️ /help yazaraq bütün mövcud əmrlərlə tanış ola bilərsiniz.");
                                 }
                                 break;
                             case Enums.Commands.TUBIN:
