@@ -13,7 +13,7 @@ namespace ResourceHandler.Resources
         public SubscriptionStore(IBinanceService binanceService)
         {
             var dllFolder = Environment.CurrentDirectory;
-            _filePath = Path.Combine(@"C:\Users\t.bakhishli\Downloads\TelegramBot-master\TelegramBot-master\ResourceHandler\", "subscriptions.json");
+            _filePath = Path.Combine(@"YOUR_FILE_PATH/", "YOUR_SUBSCRIPTIONS_JSON_FILENAME.json");
 
             _subscriptions = LoadFromFile();
             _binanceService = binanceService;
