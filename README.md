@@ -26,4 +26,4 @@ A Telegram bot that notifies users about price changes of selected cryptocurrenc
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-username/your-repo-name.git
+   git clone https://github.com/turabbxsl/BinanceTelegramBot.git
