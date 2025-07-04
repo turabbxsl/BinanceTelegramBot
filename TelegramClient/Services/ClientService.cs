@@ -206,7 +206,11 @@ namespace TelegramClient.Services
                                         await SendMessageAsync(chatId, $"Abunəliyiniz yoxdur");
                                     else
                                     {
-                                        var msg = $"Abunə olduğunuz coinlər:\n" + string.Join("\n", coinList.Select(c => $"• {c.Key} (Giriş qiymətiniz: {c.Value.EntryPrice})"));
+                                        var msg = "📋 Abunə olduğunuz coinlər:\n\n" +
+                                                      string.Join("\n", coinList.Select(c =>
+                                                          $"• {c.Key}\n" +
+                                                          $"   • Giriş qiyməti: {c.Value.EntryPrice} USD\n" +
+                                                          $"   • Yoxlama intervalı: {c.Value.Interval.TotalMinutes} dəq."));
                                         await SendMessageAsync(chatId, msg);
                                     }
 
