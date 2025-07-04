@@ -16,10 +16,8 @@ A Telegram bot that notifies users about price changes of selected cryptocurrenc
 
 ## Requirements
 
-- [.NET 6/7/8 SDK](https://dotnet.microsoft.com/download)  
-- Telegram Bot Token  
-- Binance API Key and Secret
-
+- [.NET 6/7/8 SDK](https://dotnet.microsoft.com/download)
+  
 ---
 
 ## Getting Started
